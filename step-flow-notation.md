@@ -2,15 +2,6 @@
 
 A concise format for describing multi-step workflows with branching and convergence. Designed for mobile input and LLM interpretation.
 
-## Implied steps
-
-Every flow has two implied steps:
-
-- **Step 0 (start)** — the entry point. Step 1 implicitly depends on it. Use `after 0` to run a step in parallel from the start.
-- **Step 9999 (end)** — the terminal step. Any step with no outgoing dependents and no `goto` implicitly falls through to step 9999, ending the flow.
-
-These steps are never written explicitly; they exist to anchor the flow graph.
-
 ## Step format
 
 ```text
@@ -26,6 +17,15 @@ N. type[:param] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N]
 - **if condition** — conditional edge. Condition is evaluated against the output of the parent step that caused this step to run (see *Conditions*).
 - **goto N** — after this step completes, jump to step N. Enables loops. Can be combined with `if` for conditional looping.
 - **=> output_name** — optional output binding. Names this step's output so it can be referenced later (see *Outputs*).
+
+## Implied steps
+
+Every flow has two implied steps:
+
+- **Step 0 (start)** — the entry point. Step 1 implicitly depends on it. Use `after 0` to run a step in parallel from the start.
+- **Step 9999 (end)** — the terminal step. Any step with no outgoing dependents and no `goto` implicitly falls through to step 9999, ending the flow.
+
+These steps are never written explicitly; they exist to anchor the flow graph.
 
 ## Tool arguments
 
