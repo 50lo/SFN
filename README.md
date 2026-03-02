@@ -66,6 +66,14 @@ N. type[:param] [args...] ["prompt"] ([after X,Y][, if condition][, goto N][, =>
 
 Steps run sequentially by default. You only need parentheses when you want to override that — to declare dependencies, add conditions, create loops, or name outputs.
 
+### Why not just describe workflows in English?
+
+An alternative approach is to skip any intermediate notation and describe a workflow in plain English, then let an LLM convert it directly to a DOT graph. Kilroy's [english-to-dotfile](https://github.com/danshapiro/kilroy/blob/c242e4f03b777ff38c3f3e20a09b91abac83f59e/skills/english-to-dotfile/SKILL.md) skill does exactly this. It works — but the LLM is doing a lot of invisible work in a single generation. It has to decide how many nodes to create, what granularity each step should have, which edges to draw, how to interpret conditions, how to wire data passing between steps, what prompt contracts to use, and how to handle failures. Each of those decisions is an assumption the user never stated. The result tends to look reasonable, but small changes in phrasing produce structurally different graphs.
+
+This is what I've called the [hidden dependency problem](https://micro.50lo.me/2026/02/28/prompts-have-dependencies-too.html) — every prompt carries assumptions that are invisible to the person who wrote it, and when an LLM is making all the structural decisions from ambiguous input, the assumption surface is enormous.
+
+SFN sits between natural language and DOT. The user makes the structural decisions explicitly — what the steps are, how they connect, what conditions apply — while the converter handles only the mechanical translation to DOT: node shapes, file passing plumbing, prompt contracts, failure routing. The assumption surface shrinks dramatically because the notation constrains what the LLM can invent. The user retains control over architecture; the LLM handles formatting.
+
 ### A practical example
 
 Here’s a flow that fetches a web page, checks if it mentions a specific domain, and takes different actions based on the result:
