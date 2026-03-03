@@ -10,7 +10,7 @@ description: >
 
 # SFN to Python
 
-Convert Step Flow Notation into standalone executable Python scripts. The generated scripts have zero dependencies beyond Python 3 and the Claude Code CLI. Designed for developers learning to write workflows — clear error reporting is the top priority.
+Convert Step Flow Notation into standalone executable Python scripts. The generated scripts have zero dependencies beyond Python 3 and one supported coding-agent CLI on PATH. Designed for developers learning to write workflows — clear error reporting is the top priority.
 
 ## Step Flow Notation (input format)
 
@@ -75,7 +75,26 @@ Evaluated against the triggering parent's output:
 
 ## Python script (output format)
 
-The generated script is a single self-contained `.py` file. All imports are from the Python standard library. The only external dependency is the `claude` CLI on PATH.
+The generated script is a single self-contained `.py` file. All imports are from the Python standard library. The only external dependency is one supported coding-agent CLI on PATH for `llm` steps.
+
+### Supported coding agents
+
+Generated scripts should support the same agent set and invocation patterns as `/Users/a/code/ghost/lib/ghost-agents.sh`:
+
+| Agent | Command pattern | Default model |
+|------|------------------|---------------|
+| `claude` | `claude [--model MODEL] -p PROMPT --dangerously-skip-permissions` | `claude-sonnet-4-6` |
+| `gemini` | `gemini [--model MODEL] -y -p PROMPT` | `gemini-3-flash-preview` |
+| `codex` | `codex exec [--model MODEL] PROMPT` | `gpt-5.2` |
+| `opencode` | `opencode run [--model MODEL] -p PROMPT` | `gpt-5.2` |
+| `rovodev` | `acli rovodev run PROMPT [--yolo]` | *(config-file)* |
+
+Rules:
+
+- Default to `claude` unless the user explicitly asks for another agent.
+- Always generate runtime selection via `--agent` and `--model` so the script can switch CLIs without regeneration.
+- Also honor `SFN_AGENT` and `SFN_MODEL` environment variables.
+- Use an explicit default model for every supported agent in generated scripts.
 
 ### Script structure
 
@@ -86,35 +105,107 @@ Every generated script follows this template:
 """Pipeline: <descriptive name>
 Generated from SFN by sfn-to-python
 """
+import os
+import argparse
+import shutil
 import subprocess
 import sys
-import shutil
-import argparse
 # import concurrent.futures  # only when parallel branches exist
 
 # ── Agent configuration ──────────────────────────────────────
 
-AGENT_CMD = ["claude", "-p", "--output-format", "text"]
+SUPPORTED_AGENTS = ("claude", "gemini", "codex", "opencode", "rovodev")
+AGENT_BINARIES = {
+    "claude": "claude",
+    "gemini": "gemini",
+    "codex": "codex",
+    "opencode": "opencode",
+    "rovodev": "acli",
+}
+DEFAULT_AGENT = "claude"
+DEFAULT_MODELS = {
+    "claude": "claude-sonnet-4-6",
+    "gemini": "gemini-3-flash-preview",
+    "codex": "gpt-5.2",
+    "opencode": "gpt-5.2",
+    "rovodev": None,
+}
+INSTALL_HINTS = {
+    "claude": "Install Claude Code and ensure 'claude' is on PATH.",
+    "gemini": "Install Gemini CLI and ensure 'gemini' is on PATH.",
+    "codex": "Install Codex CLI and ensure 'codex' is on PATH.",
+    "opencode": "Install OpenCode CLI and ensure 'opencode' is on PATH.",
+    "rovodev": "Install Atlassian CLI and ensure 'acli' is on PATH.",
+}
 
 
-def check_agent():
-    """Verify the coding agent CLI is available."""
-    if not shutil.which("claude"):
+def resolve_agent(args):
+    """Return the selected coding agent and model."""
+    agent = args.agent or os.environ.get("SFN_AGENT") or DEFAULT_AGENT
+    if agent not in SUPPORTED_AGENTS:
         print(
-            "ERROR: 'claude' CLI not found on PATH.\n"
-            "\n"
-            "Install Claude Code:\n"
-            "  npm install -g @anthropic-ai/claude-code\n"
-            "\n"
-            "Then run this script again.",
+            f"ERROR: unsupported agent '{agent}'. "
+            f"Supported agents: {', '.join(SUPPORTED_AGENTS)}",
             file=sys.stderr,
         )
         sys.exit(1)
+    model = args.model or os.environ.get("SFN_MODEL")
+    if not model:
+        model = DEFAULT_MODELS[agent]
+    return agent, model
+
+
+def check_agent(agent):
+    """Verify the selected coding agent CLI is available."""
+    binary = AGENT_BINARIES[agent]
+    if shutil.which(binary):
+        return
+    print(
+        f"ERROR: '{binary}' CLI not found on PATH.\n"
+        "\n"
+        f"{INSTALL_HINTS[agent]}\n"
+        "\n"
+        "Then run this script again.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def build_agent_command(agent, model, prompt):
+    """Return (command, env) for the selected coding agent."""
+    env = os.environ.copy()
+    if agent == "claude":
+        env.pop("CLAUDECODE", None)
+        command = ["claude"]
+        if model:
+            command.extend(["--model", model])
+        command.extend(["-p", prompt, "--dangerously-skip-permissions"])
+        return command, env
+    if agent == "gemini":
+        command = ["gemini"]
+        if model:
+            command.extend(["--model", model])
+        command.extend(["-y", "-p", prompt])
+        return command, env
+    if agent == "codex":
+        command = ["codex", "exec"]
+        if model:
+            command.extend(["--model", model])
+        command.append(prompt)
+        return command, env
+    if agent == "rovodev":
+        command = ["acli", "rovodev", "run", prompt, "--yolo"]
+        return command, env
+    command = ["opencode", "run"]
+    if model:
+        command.extend(["--model", model])
+    command.extend(["-p", prompt])
+    return command, env
 
 
 # ── Step runners ─────────────────────────────────────────────
 
-def run_llm(prompt, extract=False):
+def run_llm(prompt, agent, model, extract=False):
     """Call coding agent CLI. Returns (result, error).
 
     extract=True adds clean-output instructions and detects semantic
@@ -129,12 +220,17 @@ def run_llm(prompt, extract=False):
         )
     preview = (prompt[:100] + "...") if len(prompt) > 100 else prompt
     preview = preview.replace("\n", " ")
-    print(f"  > llm: {preview}")
+    print(f"  > llm[{agent}]: {preview}")
+    command, env = build_agent_command(agent, model, prompt)
     result = subprocess.run(
-        AGENT_CMD, input=prompt, capture_output=True, text=True
+        command, capture_output=True, text=True, env=env
     )
     if result.returncode != 0:
-        error = result.stderr.strip() or f"exit code {result.returncode}"
+        error = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit code {result.returncode}"
+        )
         print(f"  x Agent error: {error}")
         return None, error
     text = result.stdout.strip()
@@ -173,10 +269,11 @@ def wait_human(prompt="Your input"):
 
 # ── Pipeline ─────────────────────────────────────────────────
 
-def main():
-    check_agent()
+def main(args):
+    agent, model = resolve_agent(args)
+    check_agent(agent)
     print("Pipeline: <name>")
-    print("Agent: claude")
+    print(f"Agent: {agent}" + (f" ({model})" if model else ""))
     print()
 
     # ... generated step code here ...
@@ -184,10 +281,19 @@ def main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pipeline: <name>")
+    parser.add_argument(
+        "--agent",
+        choices=SUPPORTED_AGENTS,
+        help="Coding agent CLI to use for llm steps",
+    )
+    parser.add_argument(
+        "--model",
+        help="Override the default model for the selected agent",
+    )
     parser.add_argument("--max-loops", type=int, default=10,
                         help="Maximum iterations for any loop")
     args = parser.parse_args()
-    main()
+    main(args)
 ```
 
 ### Runner functions
@@ -195,7 +301,7 @@ if __name__ == "__main__":
 | Function | SFN type | Returns | Failure detection |
 |----------|----------|---------|-------------------|
 | `run_tool(command, label)` | `tool:name` | `(stdout, error)` | Non-zero exit code |
-| `run_llm(prompt, extract)` | `llm` | `(text, error)` | CLI error (non-zero exit) + semantic failure (`ERROR:` prefix when `extract=True`) |
+| `run_llm(prompt, agent, model, extract)` | `llm` | `(text, error)` | CLI error (non-zero exit) + semantic failure (`ERROR:` prefix when `extract=True`) |
 | `wait_human(prompt)` | `wait_human` | `(response, error)` | Empty input |
 
 Every runner returns a `(result, error)` tuple. `error` is `None` on success, a descriptive string on failure. `result` is `None` on failure.
@@ -268,7 +374,7 @@ If the prompt already references the parent output via `{var}`, do **not** dupli
 
 ### Two failure modes
 
-**Mode A — CLI error**: `claude -p` exits with non-zero code (network failure, auth error, quota exceeded). Detected by checking `result.returncode != 0`.
+**Mode A — CLI error**: the selected agent CLI exits with non-zero code (network failure, auth error, quota exceeded). Detected by checking `result.returncode != 0`.
 
 **Mode B — Semantic failure**: The CLI succeeds but the LLM says "I couldn't find it." Detected by checking the response for an `ERROR:` prefix when `extract=True`.
 
@@ -292,14 +398,14 @@ Apply these rules to translate SFN steps into Python code:
 
 ### 1. Script boilerplate
 
-Every script gets the full template from *Python script (output format)*: imports, `check_agent()`, the three runner functions, `main()`, and the `argparse` block.
+Every script gets the full template from *Python script (output format)*: imports, `resolve_agent()`, `check_agent()`, `build_agent_command()`, the three runner functions, `main(args)`, and the `argparse` block.
 
 ### 2. Map steps to code blocks
 
 For each SFN step N:
 
 - **`tool:name`**: Generate `run_tool(command, label=tool_name)`. The command is the tool name + args as a shell string. If args contain `{var}`, use an f-string. If `=> name`, assign to a named variable.
-- **`llm`**: Generate `run_llm(prompt, extract=...)`. The prompt comes from the quoted instruction. If it contains `{var}`, use an f-string and embed the variable. If the prompt has no `{var}` referencing the parent step's output, prepend context from the parent. Set `extract=True` when `=> name` and downstream steps reference it.
+- **`llm`**: Generate `run_llm(prompt, agent, model, extract=...)`. The prompt comes from the quoted instruction. If it contains `{var}`, use an f-string and embed the variable. If the prompt has no `{var}` referencing the parent step's output, prepend context from the parent. Set `extract=True` when `=> name` and downstream steps reference it.
 - **`wait_human`**: Generate `wait_human(prompt)`. The prompt describes what input is expected.
 
 ### 3. Map dependencies to code ordering
@@ -446,34 +552,106 @@ Use the SFN output name directly as the Python variable name. Convert hyphens to
 """Pipeline: Review Pipeline
 Generated from SFN by sfn-to-python
 """
+import argparse
+import os
+import shutil
 import subprocess
 import sys
-import shutil
-import argparse
 
 # ── Agent configuration ──────────────────────────────────────
 
-AGENT_CMD = ["claude", "-p", "--output-format", "text"]
+SUPPORTED_AGENTS = ("claude", "gemini", "codex", "opencode", "rovodev")
+AGENT_BINARIES = {
+    "claude": "claude",
+    "gemini": "gemini",
+    "codex": "codex",
+    "opencode": "opencode",
+    "rovodev": "acli",
+}
+DEFAULT_AGENT = "claude"
+DEFAULT_MODELS = {
+    "claude": "claude-sonnet-4-6",
+    "gemini": "gemini-3-flash-preview",
+    "codex": "gpt-5.2",
+    "opencode": "gpt-5.2",
+    "rovodev": None,
+}
+INSTALL_HINTS = {
+    "claude": "Install Claude Code and ensure 'claude' is on PATH.",
+    "gemini": "Install Gemini CLI and ensure 'gemini' is on PATH.",
+    "codex": "Install Codex CLI and ensure 'codex' is on PATH.",
+    "opencode": "Install OpenCode CLI and ensure 'opencode' is on PATH.",
+    "rovodev": "Install Atlassian CLI and ensure 'acli' is on PATH.",
+}
 
 
-def check_agent():
-    """Verify the coding agent CLI is available."""
-    if not shutil.which("claude"):
+def resolve_agent(args):
+    """Return the selected coding agent and model."""
+    agent = args.agent or os.environ.get("SFN_AGENT") or DEFAULT_AGENT
+    if agent not in SUPPORTED_AGENTS:
         print(
-            "ERROR: 'claude' CLI not found on PATH.\n"
-            "\n"
-            "Install Claude Code:\n"
-            "  npm install -g @anthropic-ai/claude-code\n"
-            "\n"
-            "Then run this script again.",
+            f"ERROR: unsupported agent '{agent}'. "
+            f"Supported agents: {', '.join(SUPPORTED_AGENTS)}",
             file=sys.stderr,
         )
         sys.exit(1)
+    model = args.model or os.environ.get("SFN_MODEL")
+    if not model:
+        model = DEFAULT_MODELS[agent]
+    return agent, model
+
+
+def check_agent(agent):
+    """Verify the selected coding agent CLI is available."""
+    binary = AGENT_BINARIES[agent]
+    if shutil.which(binary):
+        return
+    print(
+        f"ERROR: '{binary}' CLI not found on PATH.\n"
+        "\n"
+        f"{INSTALL_HINTS[agent]}\n"
+        "\n"
+        "Then run this script again.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def build_agent_command(agent, model, prompt):
+    """Return (command, env) for the selected coding agent."""
+    env = os.environ.copy()
+    if agent == "claude":
+        env.pop("CLAUDECODE", None)
+        command = ["claude"]
+        if model:
+            command.extend(["--model", model])
+        command.extend(["-p", prompt, "--dangerously-skip-permissions"])
+        return command, env
+    if agent == "gemini":
+        command = ["gemini"]
+        if model:
+            command.extend(["--model", model])
+        command.extend(["-y", "-p", prompt])
+        return command, env
+    if agent == "codex":
+        command = ["codex", "exec"]
+        if model:
+            command.extend(["--model", model])
+        command.append(prompt)
+        return command, env
+    if agent == "rovodev":
+        command = ["acli", "rovodev", "run", prompt, "--yolo"]
+        return command, env
+    command = ["opencode", "run"]
+    if model:
+        command.extend(["--model", model])
+    command.extend(["-p", prompt])
+    return command, env
 
 
 # ── Step runners ─────────────────────────────────────────────
 
-def run_llm(prompt, extract=False):
+def run_llm(prompt, agent, model, extract=False):
     """Call coding agent CLI. Returns (result, error)."""
     if extract:
         prompt += (
@@ -484,12 +662,17 @@ def run_llm(prompt, extract=False):
         )
     preview = (prompt[:100] + "...") if len(prompt) > 100 else prompt
     preview = preview.replace("\n", " ")
-    print(f"  > llm: {preview}")
+    print(f"  > llm[{agent}]: {preview}")
+    command, env = build_agent_command(agent, model, prompt)
     result = subprocess.run(
-        AGENT_CMD, input=prompt, capture_output=True, text=True
+        command, capture_output=True, text=True, env=env
     )
     if result.returncode != 0:
-        error = result.stderr.strip() or f"exit code {result.returncode}"
+        error = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit code {result.returncode}"
+        )
         print(f"  x Agent error: {error}")
         return None, error
     text = result.stdout.strip()
@@ -528,10 +711,11 @@ def wait_human(prompt="Your input"):
 
 # ── Pipeline ─────────────────────────────────────────────────
 
-def main():
-    check_agent()
+def main(args):
+    agent, model = resolve_agent(args)
+    check_agent(agent)
     print("Pipeline: Review Pipeline")
-    print("Agent: claude")
+    print(f"Agent: {agent}" + (f" ({model})" if model else ""))
     print()
 
     # Step 1: fetch page
@@ -545,6 +729,8 @@ def main():
     print("[Step 2] Summarize page")
     summary, err = run_llm(
         f"summarize the following:\n\n{page}",
+        agent=agent,
+        model=model,
         extract=True,
     )
     if err:
@@ -572,7 +758,11 @@ def main():
     elif "rejected" in decision:
         # Step 5 (after 3, if contains("rejected"))
         print("[Step 5] Draft rejection reason")
-        _, err = run_llm("draft a rejection reason for the submitted page")
+        _, err = run_llm(
+            "draft a rejection reason for the submitted page",
+            agent=agent,
+            model=model,
+        )
         if err:
             print(f"Pipeline stopped at step 5: {err}")
             return
@@ -584,16 +774,26 @@ def main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pipeline: Review Pipeline")
     parser.add_argument(
+        "--agent",
+        choices=SUPPORTED_AGENTS,
+        help="Coding agent CLI to use for llm steps",
+    )
+    parser.add_argument(
+        "--model",
+        help="Override the default model for the selected agent",
+    )
+    parser.add_argument(
         "--max-loops", type=int, default=10,
         help="Maximum iterations for any loop",
     )
     args = parser.parse_args()
-    main()
+    main(args)
 ```
 
 ## Output guidelines
 
 - Generate a single `.py` file. All boilerplate (runners, imports, argparse) is included — the script must be runnable with just `python3 script.py`.
+- For workflows with `llm` steps, include `--agent`, `--model`, `SFN_AGENT`, and `SFN_MODEL` support for `claude`, `gemini`, `codex`, and `opencode`.
 - Use descriptive variable names from SFN output names (e.g., `page_html`, not `step_1_result`).
 - Print `[Step N] Description` before each step so the user can follow execution.
 - Every error path prints what failed and stops cleanly (no tracebacks).
@@ -601,4 +801,5 @@ if __name__ == "__main__":
 - Only include `--max-loops` in argparse when the SFN uses `goto` loops.
 - Add comments referencing the SFN step number and condition for each code block.
 - Use single quotes for shell commands, f-strings when interpolating variables.
+- If the user explicitly asks for one agent, set `DEFAULT_AGENT` to that agent in the generated script; otherwise leave it as `claude`.
 - Keep the generated code simple and readable — this is a learning tool.
