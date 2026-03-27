@@ -5,12 +5,13 @@ A concise format for describing multi-step workflows with branching and converge
 ## Step format
 
 ```text
-N. type[:param] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
 ```
 
 - **N** — step number (1-based, execution order for linear flows)
 - **type** — one of: `tool`, `llm`, `wait_human`
-- **:param** — for `tool`: CLI tool name (e.g. `tool:curl`, `tool:jq`). For other types: omitted.
+- **:param** — for `tool`: CLI tool name (e.g. `tool:curl`, `tool:jq`). For `llm`: optional coding agent (e.g. `llm:codex`).
+- **:subparam** — for `llm`: optional model (e.g. `llm:codex:gpt-5.4`). Valid only when an agent is specified.
 - **args...** — shell-style arguments: positional values, `--flag=value`, `-f value`, or boolean flags `-f` / `--flag`. Use `{name}` to interpolate a named output. See *Tool arguments*.
 - **"prompt"** — optional, for `llm` nodes. Short inline instruction in quotes.
 - **after X** — dependencies. References one or more step numbers. If omitted, step depends on N-1 (sequential).
@@ -40,6 +41,21 @@ Tool args after `tool:name` follow shell conventions and are passed verbatim as 
 | `--flag=value` | Flag with a value, long form | `tool:curl --output=file.html` |
 
 Multiple args are space-separated as in a shell. Quote values that contain spaces: `tool:echo "hello world"`.
+
+## LLM selectors
+
+`llm` steps may optionally pin a coding agent and model:
+
+```text
+llm[:agent[:model]] "prompt"
+```
+
+- `llm "..."` — use the executor's default agent and model
+- `llm:codex "..."` — use `codex` and that agent's default model
+- `llm:codex:gpt-5.4 "..."` — use `codex` with an explicit model
+- `llm::gpt-5.4 "..."` — invalid; a model requires an agent
+
+Agent/model selectors are step-local overrides. They do not change the defaults used by other `llm` steps.
 
 ## Defaults and shortcuts
 
@@ -127,7 +143,7 @@ Use `goto N` to create cycles. Combine with `if` for conditional looping:
 
 ```text
 3. tool:run_tests => tests
-4. llm "fix failing tests" (after 3, if failed, goto 3)
+4. llm:codex "fix failing tests" (after 3, if failed, goto 3)
 ```
 
 Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step 3 falls through to the next step instead.
@@ -145,7 +161,7 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 
 ```text
 1. tool:curl -s https://example.com => page
-2. llm "summarize {page}" => summary
+2. llm:codex:gpt-5.4 "summarize {page}" => summary
 3. wait_human
 4. tool:save_note --text={summary}
 ```
@@ -157,7 +173,7 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 2. llm "analyze {page}, is it relevant?" => review
 3. wait_human => decision
 4. tool:save_db --payload={review} (after 3, if contains("approved"))
-5. llm "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex "draft rejection reason" (after 3, if contains("rejected"))
 ```
 
 ### Parallel with convergence
@@ -165,7 +181,7 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 ```text
 1. tool:curl -s https://site-a.com => a
 2. tool:curl -s https://site-b.com (after 0) => b
-3. llm "compare both results: {a} vs {b}" (after 1, 2) => diff
+3. llm:codex "compare both results: {a} vs {b}" (after 1, 2) => diff
 4. wait_human
 5. tool:send_report --text={diff}
 ```
@@ -176,7 +192,7 @@ Note: step 2 uses `after 0` to indicate no dependency on step 1 (both run in par
 
 ```text
 1. tool:curl -s https://example.com => page
-2. llm "extract the pricing table from {page}" => pricing
+2. llm:codex:gpt-5.4 "extract the pricing table from {page}" => pricing
 3. tool:save_note --text={pricing}
 4. llm "pricing not found, describe what the page contains instead" (after 2, if failed)
 ```
@@ -187,9 +203,9 @@ Step 3 (default branch) saves the extracted pricing on success. Step 4 runs if s
 
 ```text
 1. llm "Read PRD.md, split to tasks, save to TASKS.md" => tasks
-2. llm "Implement next task from TASKS.md, mark done" => impl
+2. llm:codex:gpt-5.4 "Implement next task from TASKS.md, mark done" => impl
 3. tool:run_tests => tests
-4. llm "Fix failing tests" (after 3, if failed, goto 3)
+4. llm:codex "Fix failing tests" (after 3, if failed, goto 3)
 5. llm "Prepare implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
 ```
 

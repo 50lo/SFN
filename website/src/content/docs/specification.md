@@ -11,12 +11,13 @@ convergence. Designed for mobile input and LLM interpretation.
 ## Step format
 
 ```text
-N. type[:param] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
 ```
 
 - **N**: step number, starting at 1
 - **type**: one of `tool`, `llm`, or `wait_human`
-- **:param**: for `tool`, the CLI tool name such as `curl` or `jq`
+- **:param**: for `tool`, the CLI tool name such as `curl` or `jq`; for `llm`, an optional coding agent
+- **:subparam**: for `llm`, an optional model; valid only when an agent is present
 - **args...**: shell-style arguments, including interpolated named outputs like `{page}`
 - **"prompt"**: optional inline instruction for an `llm` step
 - **after X**: dependencies for non-linear execution
@@ -52,6 +53,21 @@ Quote values that contain spaces, for example:
 ```text
 tool:echo "hello world"
 ```
+
+## LLM Selectors
+
+`llm` steps may optionally pin a coding agent and model:
+
+```text
+llm[:agent[:model]] "prompt"
+```
+
+- `llm "..."`: use the executor default agent and model
+- `llm:codex "..."`: use `codex` and its default model
+- `llm:codex:gpt-5.4 "..."`: use `codex` with an explicit model
+- `llm::gpt-5.4 "..."`: invalid
+
+Selectors are step-local overrides. They do not affect other `llm` steps.
 
 ## Defaults and shortcuts
 
@@ -134,7 +150,7 @@ Use `goto N` to create cycles:
 
 ```text
 3. tool:run_tests => tests
-4. llm "fix failing tests" (after 3, if failed, goto 3)
+4. llm:codex "fix failing tests" (after 3, if failed, goto 3)
 ```
 
 The loop continues only while the condition is met. Otherwise execution moves
@@ -153,7 +169,7 @@ forward normally.
 
 ```text
 1. tool:curl -s https://example.com => page
-2. llm "summarize {page}" => summary
+2. llm:codex:gpt-5.4 "summarize {page}" => summary
 3. wait_human
 4. tool:save_note --text={summary}
 ```
@@ -165,7 +181,7 @@ forward normally.
 2. llm "analyze {page}, is it relevant?" => review
 3. wait_human => decision
 4. tool:save_db --payload={review} (after 3, if contains("approved"))
-5. llm "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex "draft rejection reason" (after 3, if contains("rejected"))
 ```
 
 ### Parallel with convergence
@@ -173,7 +189,7 @@ forward normally.
 ```text
 1. tool:curl -s https://site-a.com => a
 2. tool:curl -s https://site-b.com (after 0) => b
-3. llm "compare both results: {a} vs {b}" (after 1, 2) => diff
+3. llm:codex "compare both results: {a} vs {b}" (after 1, 2) => diff
 4. wait_human
 5. tool:send_report --text={diff}
 ```
@@ -182,7 +198,7 @@ forward normally.
 
 ```text
 1. tool:curl -s https://example.com => page
-2. llm "extract the pricing table from {page}" => pricing
+2. llm:codex:gpt-5.4 "extract the pricing table from {page}" => pricing
 3. tool:save_note --text={pricing}
 4. llm "pricing not found, describe what the page contains instead" (after 2, if failed)
 ```
@@ -191,9 +207,9 @@ forward normally.
 
 ```text
 1. llm "Read PRD.md, split to tasks, save to TASKS.md" => tasks
-2. llm "Implement next task from TASKS.md, mark done" => impl
+2. llm:codex:gpt-5.4 "Implement next task from TASKS.md, mark done" => impl
 3. tool:run_tests => tests
-4. llm "Fix failing tests" (after 3, if failed, goto 3)
+4. llm:codex "Fix failing tests" (after 3, if failed, goto 3)
 5. llm "Prepare implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
 ```
 
@@ -202,6 +218,7 @@ forward normally.
 | Concept | Syntax | Example |
 | --- | --- | --- |
 | Sequential step | `N. type ...` | `2. llm "summarize {page}"` |
+| LLM selector | `llm[:agent[:model]]` | `2. llm:codex:gpt-5.4 "summarize {page}"` |
 | Named output | `=> name` | `1. tool:curl url => page` |
 | Dependency | `after X` | `(after 3)` |
 | Parallel start | `after 0` | `(after 0)` |

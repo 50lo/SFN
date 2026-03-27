@@ -8,18 +8,19 @@ Example input (SFN):
 2. llm "summarize {page}" => summary
 3. wait_human => decision
 4. tool:save_db --payload={summary} (after 3, if contains("approved"))
-5. llm "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex:gpt-5.4 "draft rejection reason" (after 3, if contains("rejected"))
 
 Analysis:
 
 - Step 1 => page: referenced by step 2 ({page}). Assign to variable `page`.
 - Step 2 => summary: referenced by step 4 ({summary}). extract=True because
   downstream tool step uses it. Prompt contains {page} -> f-string substitution.
+  Uses the script default agent/model.
 - Step 3 => decision: wait_human. Used by steps 4 and 5 via contains().
 - Step 4: if contains("approved") -> "approved" in decision. Tool command uses
   {summary} -> f-string.
 - Step 5: if contains("rejected") -> "rejected" in decision. No {var} refs,
-  generative LLM -> extract=False.
+  generative LLM -> extract=False. Uses step-local codex + gpt-5.4.
 """
 import argparse
 import os
@@ -52,10 +53,11 @@ INSTALL_HINTS = {
     "opencode": "Install OpenCode CLI and ensure 'opencode' is on PATH.",
     "rovodev": "Install Atlassian CLI and ensure 'acli' is on PATH.",
 }
+CHECKED_AGENTS = set()
 
 
 def resolve_agent(args):
-    """Return the selected coding agent and model."""
+    """Return the default agent and model for plain llm steps."""
     agent = args.agent or os.environ.get("SFN_AGENT") or DEFAULT_AGENT
     if agent not in SUPPORTED_AGENTS:
         print(
@@ -70,10 +72,27 @@ def resolve_agent(args):
     return agent, model
 
 
+def resolve_llm_config(default_agent, default_model, step_agent=None, step_model=None):
+    """Return the effective agent/model for one llm step."""
+    if step_model and not step_agent:
+        raise ValueError("step_model requires step_agent")
+    agent = step_agent or default_agent
+    if step_model is not None:
+        model = step_model
+    elif step_agent:
+        model = DEFAULT_MODELS[agent]
+    else:
+        model = default_model
+    return agent, model
+
+
 def check_agent(agent):
     """Verify the selected coding agent CLI is available."""
+    if agent in CHECKED_AGENTS:
+        return
     binary = AGENT_BINARIES[agent]
     if shutil.which(binary):
+        CHECKED_AGENTS.add(agent)
         return
     print(
         f"ERROR: '{binary}' CLI not found on PATH.\n"
@@ -129,6 +148,7 @@ def run_llm(prompt, agent, model, extract=False):
             "If you cannot complete this task, respond with "
             "exactly: ERROR: <brief reason>"
         )
+    check_agent(agent)
     preview = (prompt[:100] + "...") if len(prompt) > 100 else prompt
     preview = preview.replace("\n", " ")
     print(f"  > llm[{agent}]: {preview}")
@@ -184,7 +204,7 @@ def main(args):
     agent, model = resolve_agent(args)
     check_agent(agent)
     print("Pipeline: Review Pipeline")
-    print(f"Agent: {agent}" + (f" ({model})" if model else ""))
+    print(f"Default agent: {agent}" + (f" ({model})" if model else ""))
     print()
 
     # Step 1: fetch page
@@ -227,10 +247,16 @@ def main(args):
     elif "rejected" in decision:
         # Step 5 (after 3, if contains("rejected"))
         print("[Step 5] Draft rejection reason")
+        step_5_agent, step_5_model = resolve_llm_config(
+            agent,
+            model,
+            step_agent='codex',
+            step_model='gpt-5.4',
+        )
         _, err = run_llm(
             "draft a rejection reason for the submitted page",
-            agent=agent,
-            model=model,
+            agent=step_5_agent,
+            model=step_5_model,
         )
         if err:
             print(f"Pipeline stopped at step 5: {err}")
@@ -245,11 +271,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--agent",
         choices=SUPPORTED_AGENTS,
-        help="Coding agent CLI to use for llm steps",
+        help="Default coding agent CLI for plain llm steps",
     )
     parser.add_argument(
         "--model",
-        help="Override the default model for the selected agent",
+        help="Default model for plain llm steps",
     )
     parser.add_argument(
         "--max-loops", type=int, default=10,

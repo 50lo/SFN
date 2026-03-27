@@ -21,20 +21,34 @@ SFN is a concise text format for multi-step workflows.
 ### Step syntax
 
 ```
-N. type[:param] [args...] ["prompt"] ([after X[,Y...]][, if cond][, goto N][, => name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if cond][, goto N][, => name])
 ```
 
 | Part | Meaning |
 |------|---------|
 | `N` | Step number (1-based) |
 | `type` | `tool`, `llm`, or `wait_human` |
-| `:param` | Tool name for `tool` type (e.g. `tool:fetch_url`) |
+| `:param` | Tool name for `tool`, or coding agent for `llm` |
+| `:subparam` | Model for `llm`; requires `:param` |
 | `args` | Shell-style arguments (see below) |
 | `"prompt"` | Inline instruction for `llm` steps |
 | `after X,Y` | Dependencies. Omitted = depends on N-1. `after 0` = depends on flow start |
 | `if cond` | Conditional gate on parent output |
 | `goto N` | Loop back to step N after completion |
 | `=> name` | Name this step's output for `{name}` interpolation in later steps |
+
+### LLM selectors
+
+`llm` steps may pin a coding agent and model:
+
+```text
+llm[:agent[:model]] "prompt"
+```
+
+- `llm "..."` -> use script defaults
+- `llm:codex "..."` -> use `codex` and its default model
+- `llm:codex:gpt-5.4 "..."` -> use `codex` with explicit model
+- `llm::gpt-5.4 "..."` -> invalid
 
 ### Tool argument syntax
 
@@ -96,9 +110,11 @@ Generated scripts should support the same agent set and invocation patterns as `
 Rules:
 
 - Default to `claude` unless the user explicitly asks for another agent.
-- Always generate runtime selection via `--agent` and `--model` so the script can switch CLIs without regeneration.
+- Always generate `--agent` and `--model` as defaults for plain `llm` steps.
 - Also honor `SFN_AGENT` and `SFN_MODEL` environment variables.
 - Use an explicit default model for every supported agent in generated scripts.
+- `llm:agent` overrides the default agent for that step and uses that agent's built-in default model.
+- `llm:agent:model` overrides both for that step.
 
 ### Runner functions
 
@@ -202,14 +218,14 @@ Apply these rules to translate SFN steps into Python code:
 
 ### 1. Script boilerplate
 
-Every script gets the full template from [assets/template.py](assets/template.py): imports, `resolve_agent()`, `check_agent()`, `build_agent_command()`, the three runner functions, `main(args)`, and the `argparse` block.
+Every script gets the full template from [assets/template.py](assets/template.py): imports, `resolve_agent()`, `resolve_llm_config()`, `check_agent()`, `build_agent_command()`, the three runner functions, `main(args)`, and the `argparse` block.
 
 ### 2. Map steps to code blocks
 
 For each SFN step N:
 
 - **`tool:name`**: Generate `run_tool(command, label=tool_name)`. The command is the tool name + args as a shell string. If args contain `{var}`, use an f-string. If `=> name`, assign to a named variable.
-- **`llm`**: Generate `run_llm(prompt, agent, model, extract=...)`. The prompt comes from the quoted instruction. If it contains `{var}`, use an f-string and embed the variable. If the prompt has no `{var}` referencing the parent step's output, prepend context from the parent. Set `extract=True` when `=> name` and downstream steps reference it.
+- **`llm[:agent[:model]]`**: Generate `run_llm(prompt, agent, model, extract=...)`. The prompt comes from the quoted instruction. If it contains `{var}`, use an f-string and embed the variable. If the prompt has no `{var}` referencing the parent step's output, prepend context from the parent. Set `extract=True` when `=> name` and downstream steps reference it. Plain `llm` uses the script default agent/model. `llm:agent` uses `resolve_llm_config(..., step_agent="agent")`. `llm:agent:model` uses `resolve_llm_config(..., step_agent="agent", step_model="model")`.
 - **`wait_human`**: Generate `wait_human(prompt)`. The prompt describes what input is expected.
 
 ### 3. Map dependencies to code ordering
@@ -340,16 +356,16 @@ For a complete worked example (input SFN, analysis, and full output script), see
 2. llm "summarize {page}" => summary
 3. wait_human => decision
 4. tool:save_db --payload={summary} (after 3, if contains("approved"))
-5. llm "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex:gpt-5.4 "draft rejection reason" (after 3, if contains("rejected"))
 ```
 
 ### Analysis
 
 - Step 1 `=> page`: referenced by step 2 (`{page}`). Assign to variable `page`.
-- Step 2 `=> summary`: referenced by step 4 (`{summary}`). `extract=True` because downstream tool step uses it. Prompt contains `{page}` -> f-string substitution.
+- Step 2 `=> summary`: referenced by step 4 (`{summary}`). `extract=True` because downstream tool step uses it. Prompt contains `{page}` -> f-string substitution. Uses the script default agent/model.
 - Step 3 `=> decision`: `wait_human`. Used by steps 4 and 5 via `contains()`.
 - Step 4: `if contains("approved")` -> `"approved" in decision`. Tool command uses `{summary}` -> f-string.
-- Step 5: `if contains("rejected")` -> `"rejected" in decision`. No `{var}` refs, generative LLM -> `extract=False`.
+- Step 5: `if contains("rejected")` -> `"rejected" in decision`. No `{var}` refs, generative LLM -> `extract=False`. Uses step-local `codex` + `gpt-5.4`.
 
 ### Output
 
@@ -358,7 +374,7 @@ See [references/example_output.py](references/example_output.py) for the full ge
 ## Output guidelines
 
 - Generate a single `.py` file. All boilerplate (runners, imports, argparse) is included — the script must be runnable with just `python3 script.py`.
-- For workflows with `llm` steps, include `--agent`, `--model`, `SFN_AGENT`, and `SFN_MODEL` support for `claude`, `gemini`, `codex`, and `opencode`.
+- For workflows with `llm` steps, include `--agent`, `--model`, `SFN_AGENT`, and `SFN_MODEL` support for `claude`, `gemini`, `codex`, and `opencode` as defaults for plain `llm` steps.
 - Use descriptive variable names from SFN output names (e.g., `page_html`, not `step_1_result`).
 - Print `[Step N] Description` before each step so the user can follow execution.
 - Every error path prints what failed and stops cleanly (no tracebacks).
@@ -367,4 +383,5 @@ See [references/example_output.py](references/example_output.py) for the full ge
 - Add comments referencing the SFN step number and condition for each code block.
 - Use single quotes for shell commands, f-strings when interpolating variables.
 - If the user explicitly asks for one agent, set `DEFAULT_AGENT` to that agent in the generated script; otherwise leave it as `claude`.
+- If an SFN step explicitly sets `llm:agent[:model]`, generate a step-local override instead of routing that step through the global default.
 - Keep the generated code simple and readable — this is a learning tool.

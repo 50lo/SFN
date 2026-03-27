@@ -5,12 +5,13 @@ A short text format for writing multi-step workflows. Easy to type on a phone, e
 ## Step format
 
 ```text
-N. type[:param] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
 ```
 
 - **N** — step number (starts at 1; steps run in this order unless changed with `after`)
 - **type** — one of: `tool`, `llm`, `wait_human`
-- **:param** — for `tool`: the command name (e.g. `tool:curl`, `tool:jq`). Not used for other types.
+- **:param** — for `tool`: the command name (e.g. `tool:curl`, `tool:jq`). For `llm`: optional coding agent.
+- **:subparam** — for `llm`: optional model. Only valid when `:param` is an agent.
 - **args...** — arguments passed to the tool, like a shell command. Use `{name}` to insert a named output from an earlier step. See *Tool arguments*.
 - **"prompt"** — for `llm` steps only. A short instruction in quotes.
 - **after X** — which steps must finish before this one runs. Can list multiple: `after 1, 2`. If missing, the step waits for the previous one (N-1).
@@ -40,6 +41,21 @@ Arguments after `tool:name` work like shell commands:
 | `--flag=value` | Long flag with a value | `tool:curl --output=file.html` |
 
 Separate arguments with spaces. Use quotes around values with spaces: `tool:echo "hello world"`.
+
+## LLM selectors
+
+`llm` steps can optionally pin a coding agent and model:
+
+```text
+llm[:agent[:model]] "prompt"
+```
+
+- `llm "..."` uses the executor default
+- `llm:codex "..."` uses `codex` and its default model
+- `llm:codex:gpt-5.4 "..."` uses `codex` with an explicit model
+- `llm::gpt-5.4 "..."` is invalid
+
+These selectors only affect that one step.
 
 ## Defaults
 
@@ -126,7 +142,7 @@ Use `goto N` to jump back to an earlier step. Add `if` to loop only when a condi
 
 ```text
 3. tool:run_tests => tests
-4. llm "fix failing tests" (after 3, if failed, goto 3)
+4. llm:codex "fix failing tests" (after 3, if failed, goto 3)
 ```
 
 Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step 3 continues forward instead.
@@ -144,7 +160,7 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 
 ```text
 1. tool:curl -s https://example.com => page
-2. llm "summarize {page}" => summary
+2. llm:codex:gpt-5.4 "summarize {page}" => summary
 3. wait_human
 4. tool:save_note --text={summary}
 ```
@@ -156,7 +172,7 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 2. llm "analyze {page}, is it relevant?" => review
 3. wait_human => decision
 4. tool:save_db --payload={review} (after 3, if contains("approved"))
-5. llm "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex "draft rejection reason" (after 3, if contains("rejected"))
 ```
 
 ### Parallel with convergence
@@ -164,7 +180,7 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 ```text
 1. tool:curl -s https://site-a.com => a
 2. tool:curl -s https://site-b.com (after 0) => b
-3. llm "compare both results: {a} vs {b}" (after 1, 2) => diff
+3. llm:codex "compare both results: {a} vs {b}" (after 1, 2) => diff
 4. wait_human
 5. tool:send_report --text={diff}
 ```
@@ -175,7 +191,7 @@ Step 2 uses `after 0` so it starts at the same time as step 1 (both run in paral
 
 ```text
 1. tool:curl -s https://example.com => page
-2. llm "extract the pricing table from {page}" => pricing
+2. llm:codex:gpt-5.4 "extract the pricing table from {page}" => pricing
 3. tool:save_note --text={pricing}
 4. llm "pricing not found, describe what the page contains instead" (after 2, if failed)
 ```
@@ -186,9 +202,9 @@ Step 3 saves the pricing on success (it's the default branch — no condition). 
 
 ```text
 1. llm "Read PRD.md, split to tasks, save to TASKS.md" => tasks
-2. llm "Implement next task from TASKS.md, mark done" => impl
+2. llm:codex:gpt-5.4 "Implement next task from TASKS.md, mark done" => impl
 3. tool:run_tests => tests
-4. llm "Fix failing tests" (after 3, if failed, goto 3)
+4. llm:codex "Fix failing tests" (after 3, if failed, goto 3)
 5. llm "Prepare implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
 ```
 

@@ -34,10 +34,11 @@ INSTALL_HINTS = {
     "opencode": "Install OpenCode CLI and ensure 'opencode' is on PATH.",
     "rovodev": "Install Atlassian CLI and ensure 'acli' is on PATH.",
 }
+CHECKED_AGENTS = set()
 
 
 def resolve_agent(args):
-    """Return the selected coding agent and model."""
+    """Return the default agent and model for plain llm steps."""
     agent = args.agent or os.environ.get("SFN_AGENT") or DEFAULT_AGENT
     if agent not in SUPPORTED_AGENTS:
         print(
@@ -52,10 +53,27 @@ def resolve_agent(args):
     return agent, model
 
 
+def resolve_llm_config(default_agent, default_model, step_agent=None, step_model=None):
+    """Return the effective agent/model for one llm step."""
+    if step_model and not step_agent:
+        raise ValueError("step_model requires step_agent")
+    agent = step_agent or default_agent
+    if step_model is not None:
+        model = step_model
+    elif step_agent:
+        model = DEFAULT_MODELS[agent]
+    else:
+        model = default_model
+    return agent, model
+
+
 def check_agent(agent):
     """Verify the selected coding agent CLI is available."""
+    if agent in CHECKED_AGENTS:
+        return
     binary = AGENT_BINARIES[agent]
     if shutil.which(binary):
+        CHECKED_AGENTS.add(agent)
         return
     print(
         f"ERROR: '{binary}' CLI not found on PATH.\n"
@@ -115,6 +133,7 @@ def run_llm(prompt, agent, model, extract=False):
             "If you cannot complete this task, respond with "
             "exactly: ERROR: <brief reason>"
         )
+    check_agent(agent)
     preview = (prompt[:100] + "...") if len(prompt) > 100 else prompt
     preview = preview.replace("\n", " ")
     print(f"  > llm[{agent}]: {preview}")
@@ -170,7 +189,7 @@ def main(args):
     agent, model = resolve_agent(args)
     check_agent(agent)
     print("Pipeline: <name>")
-    print(f"Agent: {agent}" + (f" ({model})" if model else ""))
+    print(f"Default agent: {agent}" + (f" ({model})" if model else ""))
     print()
 
     # ... generated step code here ...
@@ -181,11 +200,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--agent",
         choices=SUPPORTED_AGENTS,
-        help="Coding agent CLI to use for llm steps",
+        help="Default coding agent CLI for plain llm steps",
     )
     parser.add_argument(
         "--model",
-        help="Override the default model for the selected agent",
+        help="Default model for plain llm steps",
     )
     parser.add_argument("--max-loops", type=int, default=10,
                         help="Maximum iterations for any loop")
