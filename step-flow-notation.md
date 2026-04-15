@@ -5,7 +5,7 @@ A concise format for describing multi-step workflows with branching and converge
 ## Step format
 
 ```text
-N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N]) [=> output_name]
 ```
 
 - **N** — step number (1-based, execution order for linear flows)
