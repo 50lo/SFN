@@ -123,6 +123,8 @@ Step 3 only runs if tests fail, fixes the code, then jumps back to step 2 to re-
 |----------------------------|------------------------------------------------------------------------|
 |`step-flow-notation.md`     |The SFN specification — syntax, semantics, and examples                 |
 |`skills/sfn-to-dot/SKILL.md`|Converter skill for translating SFN into Attractor-compatible DOT graphs|
+|`skills/sfn-to-python/`     |Converter skill for translating SFN into runnable Python scripts that call coding-agent CLIs directly |
+|`skills/sfn-to-acp/`        |Converter skill for translating SFN into runnable Python scripts that call coding agents over ACP |
 
 ### Using the SFN specification
 
@@ -133,6 +135,11 @@ The spec (`step-flow-notation.md`) is a reference document. You can include it i
 The skill file (`skills/sfn-to-dot/SKILL.md`) is designed for LLM-based coding tools that support skill files — such as [OpenClaw](https://openclaw.ai/) (via ClawHub), [Kilroy](https://github.com/danshapiro/kilroy), or any tool that can load a SKILL.md into its context. Drop it into your skills directory and the LLM will know how to convert SFN flows into valid DOT pipeline graphs, handling all the plumbing: node shapes, file-based data passing, prompt contracts for extractive LLM steps, and failure routing.
 
 You can also paste the skill content directly into a conversation with any LLM and ask it to convert an SFN flow.
+
+The Python-oriented skills follow the same pattern:
+
+- `skills/sfn-to-python/SKILL.md` generates standalone Python scripts that invoke coding-agent CLIs directly.
+- `skills/sfn-to-acp/SKILL.md` generates standalone Python scripts that keep the same SFN interface but route `llm` steps through the Agent Client Protocol (ACP).
 
 ## Quick reference
 
