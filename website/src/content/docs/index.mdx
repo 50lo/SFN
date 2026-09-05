@@ -1,6 +1,6 @@
 ---
 title: Step Flow Notation
-description: A concise text format for describing multi-step AI workflows.
+description: A short text format for multi-step AI workflows.
 template: splash
 hero:
   tagline: Write multi-step AI workflows in a few lines of text, then convert them into executable graphs.
@@ -24,28 +24,27 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 		and human-review steps as one compact pipeline.
 	</Card>
 	<Card title="Phone-friendly syntax" icon="mobile">
-		DOT graphs are powerful but painful to write by hand. SFN keeps the authoring
-		format short enough for a touchscreen keyboard.
+		DOT graphs are powerful but awkward to write by hand. SFN keeps authoring
+		short enough for a touchscreen keyboard.
 	</Card>
 	<Card title="LLM-ready structure" icon="sparkles">
 		Each numbered step can be a `tool`, `llm`, or `wait_human` action with
 		output bindings, conditions, convergence, and loops.
 	</Card>
 	<Card title="Executable graphs" icon="diagram-3">
-		SFN is meant to be converted into a machine-executable workflow graph instead
-		of staying as informal prose.
+		SFN is meant to convert into a machine-executable workflow graph — not stay
+		as informal prose.
 	</Card>
 </CardGrid>
 
 ## The problem
 
-Modern AI coding agents are strong at individual tasks, but real work usually
-needs orchestration: fetch data, summarize it, branch on a condition, retry
-until tests pass, or pause for human approval.
+Modern coding agents handle single tasks well. Real work usually needs
+orchestration: fetch data, summarize it, branch on a condition, retry until
+tests pass, or pause for human approval.
 
-Graph-based workflow systems handle this well, but authoring raw DOT by hand is
-verbose and awkward, especially on mobile. SFN keeps the same workflow semantics
-while stripping the syntax down to the essentials.
+Graph-based systems express that cleanly, but raw DOT is verbose and hard to
+type on mobile. SFN keeps the same workflow ideas in a much smaller syntax.
 
 ## SFN in three lines
 
@@ -55,11 +54,11 @@ while stripping the syntax down to the essentials.
 3. tool:save_note --text={summary}
 ```
 
-That small flow still expresses the full pipeline:
+That short flow still covers the full pipeline:
 
 - Step 1 runs a tool and names its output `page`.
-- Step 2 uses that output inside an LLM prompt and names the result `summary`.
-- Step 3 sends the result to another tool.
+- Step 2 uses that output in an LLM prompt and names the result `summary`.
+- Step 3 passes the result to another tool.
 
 ## What you can express
 
@@ -74,18 +73,26 @@ That small flow still expresses the full pipeline:
 
 <CardGrid>
 	<Card title="Specification" icon="open-book" href="/specification/">
-		The formal syntax, semantics, edge cases, and examples for writing SFN flows.
+		Syntax, semantics, edge cases, and examples for writing SFN flows.
 	</Card>
-	<Card title="Converter skill" icon="code" href="https://github.com/50lo/SFN/tree/main/skills/sfn-to-dot">
-		A skill for translating SFN into Attractor-compatible DOT graphs with the
-		required plumbing filled in.
+	<Card title="DOT converter" icon="code" href="https://github.com/50lo/SFN/tree/main/skills/sfn-to-dot">
+		Skill that turns SFN into Attractor-compatible DOT graphs, including
+		plumbing for data passing and failure routing.
+	</Card>
+	<Card title="Python converter" icon="seti:python" href="https://github.com/50lo/SFN/tree/main/skills/sfn-to-python">
+		Skill that turns SFN into runnable Python scripts that call coding-agent
+		CLIs directly.
+	</Card>
+	<Card title="ACP converter" icon="puzzle" href="https://github.com/50lo/SFN/tree/main/skills/sfn-to-acp">
+		Skill that keeps the same SFN surface but routes `llm` steps through the
+		Agent Client Protocol (ACP).
 	</Card>
 </CardGrid>
 
 ## What is in scope now
 
-This site is intentionally small:
+This site stays small on purpose:
 
 - The landing page explains what SFN is and why it exists.
 - The specification page is the main reference.
-- Usage examples can be added later as a separate section once the example set is broader.
+- Broader usage tutorials can land later as a separate section.

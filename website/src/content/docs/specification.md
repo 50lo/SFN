@@ -5,13 +5,13 @@ description: Syntax, semantics, and examples for Step Flow Notation.
 
 # Step Flow Notation
 
-A concise format for describing multi-step workflows with branching and
-convergence. Designed for mobile input and LLM interpretation.
+A short format for multi-step workflows with branching and convergence. Built
+for mobile typing and LLM conversion.
 
 ## Step format
 
 ```text
-N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N][, => output_name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N]) [=> output_name]
 ```
 
 - **N**: step number, starting at 1
@@ -32,13 +32,13 @@ Every flow has two implied steps:
 - **Step 0 (start)**: the entry point
 - **Step 9999 (end)**: the terminal step
 
-These steps are never written explicitly. They exist to anchor the workflow
-graph and make constructs like `after 0` possible.
+Do not write these steps. They anchor the workflow graph and make constructs
+like `after 0` possible.
 
 ## Tool arguments
 
-Arguments after `tool:name` follow shell conventions and are passed through as a
-shell command.
+Arguments after `tool:name` follow shell conventions and pass through as a shell
+command.
 
 | Form | Meaning | Example |
 | --- | --- | --- |
@@ -54,9 +54,9 @@ Quote values that contain spaces, for example:
 tool:echo "hello world"
 ```
 
-## LLM Selectors
+## LLM selectors
 
-`llm` steps may optionally pin a coding agent and model:
+`llm` steps may pin a coding agent and model:
 
 ```text
 llm[:agent[:model]] "prompt"
@@ -67,40 +67,40 @@ llm[:agent[:model]] "prompt"
 - `llm:codex:gpt-5.4 "..."`: use `codex` with an explicit model
 - `llm::gpt-5.4 "..."`: invalid
 
-Selectors are step-local overrides. They do not affect other `llm` steps.
+Selectors are step-local. They do not affect other `llm` steps.
 
 ## Defaults and shortcuts
 
-- Steps without `after` are sequential by default.
-- Step 1 implicitly depends on step 0.
-- Steps without outgoing dependents and without `goto` fall through to step 9999.
-- `wait_human` pauses execution until the user responds, and that response
-  becomes the step output.
+- Steps without `after` run in sequence by default.
+- Step 1 depends on step 0.
+- Steps without dependents and without `goto` fall through to step 9999.
+- `wait_human` pauses until the user replies; that reply becomes the step
+  output.
 
 ## Outputs
 
 Use `=> name` to bind a step output, then reference it later with `{name}`.
 
 ```text
-1. tool:curl -s https://example.com => page
-2. llm "summarize {page}" => summary
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/releases/latest => release
+2. llm "summarize {release} for a short changelog" => summary
 3. tool:save_note --text={summary}
 ```
 
-If a step has no `=> name`, the output can still exist for the executor, but it
-cannot be referenced by name in later steps.
+If a step has no `=> name`, the executor may still see the output, but later
+steps cannot reference it by name.
 
 ## Conditions
 
-Conditions decide whether a step runs when its dependency completes.
+Conditions decide whether a step runs when its dependency finishes.
 
 ### Condition subject
 
-- With one dependency, the condition is evaluated against that dependency's output.
-- With multiple dependencies, the condition is evaluated against the dependency
-  whose completion makes the step runnable.
-- To target a specific named output explicitly, qualify the predicate with the
-  output name: `review contains("approved")`.
+- With one dependency, evaluate against that dependency's output.
+- With multiple dependencies, evaluate against the dependency whose completion
+  made the step runnable.
+- To target a specific named output, qualify the predicate:
+  `review contains("approved")`.
 
 ### Condition language
 
@@ -123,11 +123,11 @@ Examples:
 ### Failure detection
 
 `failed` and `succeeded` apply across all step types. Use a sibling `if failed`
-branch when a downstream step depends on a result that might not exist.
+branch when a later step depends on a result that might not exist.
 
 ## Branching
 
-Multiple steps can depend on the same parent with different conditions:
+Several steps can depend on the same parent with different conditions:
 
 ```text
 3. tool:save_db (after 2, if contains("approved"))
@@ -142,7 +142,7 @@ Multiple dependencies create an AND-join:
 5. llm "summarize both results" (after 3, 4)
 ```
 
-That step runs only after both parent steps complete.
+That step runs only after both parents finish.
 
 ## Loops
 
@@ -153,8 +153,8 @@ Use `goto N` to create cycles:
 4. llm:codex "fix failing tests" (after 3, if failed, goto 3)
 ```
 
-The loop continues only while the condition is met. Otherwise execution moves
-forward normally.
+The loop continues only while the condition holds. Otherwise execution moves
+forward.
 
 ## Edge cases
 
@@ -165,11 +165,11 @@ forward normally.
 
 ## Examples
 
-### Linear: fetch and summarize
+### Linear: fetch release notes and summarize
 
 ```text
-1. tool:curl -s https://example.com => page
-2. llm:codex:gpt-5.4 "summarize {page}" => summary
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/releases/latest => release
+2. llm:codex:gpt-5.4 "summarize {release} for a short changelog email" => summary
 3. wait_human
 4. tool:save_note --text={summary}
 ```
@@ -177,19 +177,19 @@ forward normally.
 ### Branching: review gate
 
 ```text
-1. tool:curl -s https://example.com => page
-2. llm "analyze {page}, is it relevant?" => review
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/pulls/1 => pr
+2. llm "review {pr}: is this ready to merge?" => review
 3. wait_human => decision
 4. tool:save_db --payload={review} (after 3, if contains("approved"))
-5. llm:codex "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex "draft a clear rejection note for the author" (after 3, if contains("rejected"))
 ```
 
 ### Parallel with convergence
 
 ```text
-1. tool:curl -s https://site-a.com => a
-2. tool:curl -s https://site-b.com (after 0) => b
-3. llm:codex "compare both results: {a} vs {b}" (after 1, 2) => diff
+1. tool:curl -s https://docs.example.com/v1/auth => v1
+2. tool:curl -s https://docs.example.com/v2/auth (after 0) => v2
+3. llm:codex "compare auth docs {v1} vs {v2}; list breaking changes" (after 1, 2) => diff
 4. wait_human
 5. tool:send_report --text={diff}
 ```
@@ -197,20 +197,20 @@ forward normally.
 ### Extractive LLM with failure handling
 
 ```text
-1. tool:curl -s https://example.com => page
+1. tool:curl -s https://docs.example.com/pricing => page
 2. llm:codex:gpt-5.4 "extract the pricing table from {page}" => pricing
 3. tool:save_note --text={pricing}
-4. llm "pricing not found, describe what the page contains instead" (after 2, if failed)
+4. llm "pricing not found; describe what the page contains instead" (after 2, if failed)
 ```
 
-### Loop: iterative dev cycle
+### Loop: iterative build cycle
 
 ```text
-1. llm "Read PRD.md, split to tasks, save to TASKS.md" => tasks
-2. llm:codex:gpt-5.4 "Implement next task from TASKS.md, mark done" => impl
+1. llm "Read PRD.md, split into tasks, save to TASKS.md" => tasks
+2. llm:codex:gpt-5.4 "Implement the next open task from TASKS.md, then mark it done" => impl
 3. tool:run_tests => tests
 4. llm:codex "Fix failing tests" (after 3, if failed, goto 3)
-5. llm "Prepare implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
+5. llm "Write a short implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
 ```
 
 ## Quick reference
