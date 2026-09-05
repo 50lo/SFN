@@ -64,7 +64,7 @@ An SFN flow is a numbered list of steps. Each step has a type (`tool`, `llm`, or
 N. type[:param[:subparam]] [args...] ["prompt"] ([after X,Y][, if condition][, goto N]) [=> name]
 ```
 
-Steps run in order by default. Use parentheses only when you need dependencies, conditions, loops, or named outputs beyond that default.
+Steps run in order by default. Use parentheses only for dependencies, conditions, or loops. Bind outputs with `=>` after the step.
 
 ### Why not describe workflows in English?
 
