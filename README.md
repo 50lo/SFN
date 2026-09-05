@@ -1,20 +1,20 @@
 # Step Flow Notation (SFN)
 
-A concise text format for describing multi-step AI workflows. Write a pipeline on your phone in a few lines of text, then convert it to a machine-executable graph.
+A short text format for multi-step AI workflows. Write a pipeline in a few lines — even on a phone — then convert it to a machine-executable graph.
 
 ## What problem does this solve?
 
 ### AI agents need orchestration
 
-Modern AI coding agents — Claude Code, OpenAI Codex, Gemini CLI — are powerful, but they execute one task at a time. Real-world work often requires chaining multiple steps together: fetch data, analyze it, branch on a condition, loop until tests pass, get human approval, save the result.
+Coding agents such as Claude Code, OpenAI Codex, and Gemini CLI are strong at single tasks. Real work usually needs a chain: fetch data, analyze it, branch on a result, loop until tests pass, ask a human, then save the outcome.
 
-This is **agent orchestration** — defining a multi-step pipeline where each step can be an LLM call, a tool/CLI command, or a human decision point, with conditional branching and loops connecting them.
+That chain is **agent orchestration** — a multi-step pipeline of LLM calls, tools/CLI commands, and human gates, linked by conditions and loops.
 
-Projects like [StrongDM’s Attractor](https://github.com/strongdm/attractor) have shown that defining these pipelines as directed graphs (using Graphviz DOT syntax) is a clean, powerful approach. The graph is the workflow: nodes are tasks, edges are transitions, and attributes configure behavior.
+Projects like [StrongDM’s Attractor](https://github.com/strongdm/attractor) treat these pipelines as directed graphs (Graphviz DOT). Nodes are tasks, edges are transitions, and attributes configure behavior.
 
-### DOT is powerful but painful to write by hand
+### DOT is powerful but hard to write by hand
 
-Here’s a simple three-step pipeline in DOT — fetch a page, summarize it, save the result:
+A simple three-step pipeline in DOT — fetch a page, summarize it, save the result:
 
 ```dot
 digraph pipeline {
@@ -42,9 +42,9 @@ digraph pipeline {
 }
 ```
 
-That’s a lot of boilerplate for three steps. Now imagine writing this on a phone, or adding branching and loops. It gets unwieldy fast.
+That is a lot of boilerplate for three steps. Branching and loops make it worse. On a phone keyboard it is nearly unusable.
 
-This matters because mobile-first development is becoming real. Tools like [OpenClaw](https://openclaw.ai/) let you run autonomous coding agent loops from your phone via Telegram or WhatsApp. ChatGPT and Claude mobile apps keep adding coding features. People are increasingly defining and triggering work from their phones — but DOT syntax was never designed for a touchscreen keyboard.
+Mobile-first agent work is already here. Tools like [OpenClaw](https://openclaw.ai/) run coding loops from Telegram or WhatsApp. ChatGPT and Claude mobile apps keep adding coding features. People start work from phones — but DOT was never meant for a touchscreen.
 
 ### SFN: the same pipeline in three lines
 
@@ -54,60 +54,60 @@ This matters because mobile-first development is becoming real. Tools like [Open
 3. tool:save_note --text={summary}
 ```
 
-That’s it. Same pipeline, same semantics. An LLM or a converter tool translates this into a full DOT graph with all the plumbing — file passing, prompt contracts, node shapes, edge routing — handled automatically.
+Same pipeline, same semantics. An LLM or converter expands this into a full DOT graph — file passing, prompt contracts, node shapes, and edge routing included.
 
 ## How it works
 
-An SFN flow is a numbered list of steps. Each step has a type (`tool`, `llm`, or `wait_human`), optional arguments, and optional modifiers in parentheses:
+An SFN flow is a numbered list of steps. Each step has a type (`tool`, `llm`, or `wait_human`), optional arguments, and optional modifiers:
 
 ```
-N. type[:param] [args...] ["prompt"] ([after X,Y][, if condition][, goto N][, => name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X,Y][, if condition][, goto N]) [=> name]
 ```
 
-Steps run sequentially by default. You only need parentheses when you want to override that — to declare dependencies, add conditions, create loops, or name outputs.
+Steps run in order by default. Use parentheses only when you need dependencies, conditions, loops, or named outputs beyond that default.
 
-### Why not just describe workflows in English?
+### Why not describe workflows in English?
 
-An alternative approach is to skip any intermediate notation and describe a workflow in plain English, then let an LLM convert it directly to a DOT graph. Kilroy's [english-to-dotfile](https://github.com/danshapiro/kilroy/blob/c242e4f03b777ff38c3f3e20a09b91abac83f59e/skills/english-to-dotfile/SKILL.md) skill does exactly this. It works — but the LLM is doing a lot of invisible work in a single generation. It has to decide how many nodes to create, what granularity each step should have, which edges to draw, how to interpret conditions, how to wire data passing between steps, what prompt contracts to use, and how to handle failures. Each of those decisions is an assumption the user never stated. The result tends to look reasonable, but small changes in phrasing produce structurally different graphs.
+You can skip an intermediate notation and ask an LLM to turn plain English into DOT. Kilroy's [english-to-dotfile](https://github.com/danshapiro/kilroy/blob/c242e4f03b777ff38c3f3e20a09b91abac83f59e/skills/english-to-dotfile/SKILL.md) skill does that. It works — but one generation must invent node count, step granularity, edges, conditions, data wiring, prompt contracts, and failure handling. Those choices are assumptions the user never stated. Small wording changes often produce different graphs.
 
-This is what I've called the [hidden dependency problem](https://micro.50lo.me/2026/02/28/prompts-have-dependencies-too.html) — every prompt carries assumptions that are invisible to the person who wrote it, and when an LLM is making all the structural decisions from ambiguous input, the assumption surface is enormous.
+That is the [hidden dependency problem](https://micro.50lo.me/2026/02/28/prompts-have-dependencies-too.html): every prompt carries invisible assumptions. When the LLM owns all structural decisions, the assumption surface is large.
 
-SFN sits between natural language and DOT. The user makes the structural decisions explicitly — what the steps are, how they connect, what conditions apply — while the converter handles only the mechanical translation to DOT: node shapes, file passing plumbing, prompt contracts, failure routing. The assumption surface shrinks dramatically because the notation constrains what the LLM can invent. The user retains control over architecture; the LLM handles formatting.
+SFN sits between natural language and DOT. You state the structure — steps, links, conditions — and the converter handles mechanical DOT details: shapes, file plumbing, prompt contracts, failure routing. The notation limits what the LLM can invent. You keep architectural control; the LLM formats.
 
 ### A practical example
 
-Here’s a flow that fetches a web page, checks if it mentions a specific domain, and takes different actions based on the result:
+Fetch a pull request, review it, then branch on a human decision:
 
 ```
-1. tool:curl -s https://example.com/links => page
-2. llm "analyze {page}, is it relevant to our project?" => review
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/pulls/1 => pr
+2. llm "review {pr}: is this ready to merge?" => review
 3. wait_human => decision
 4. tool:save_db --payload={review} (after 3, if contains("approved"))
-5. llm "draft rejection reason" (after 3, if contains("rejected"))
+5. llm "draft a clear rejection note for the author" (after 3, if contains("rejected"))
 ```
 
-What’s happening here:
+What happens:
 
-- Steps 1-3 run sequentially (no `after` needed — it’s implied).
-- Step 1 names its output `page`, which step 2 references as `{page}`.
-- Step 3 pauses for human input. The person’s response becomes the output.
-- Steps 4 and 5 both depend on step 3 but with different conditions — they branch based on what the human said. Only one of them runs.
+- Steps 1–3 run in sequence (`after` is implied).
+- Step 1 names its output `pr`; step 2 uses `{pr}`.
+- Step 3 waits for a human reply; that reply is the output.
+- Steps 4 and 5 both depend on step 3 with different conditions. Only one runs.
 
 ### Parallel execution and convergence
 
-Steps can run in parallel and converge:
+Steps can run in parallel, then join:
 
 ```
-1. tool:curl -s https://site-a.com => a
-2. tool:curl -s https://site-b.com (after 0) => b
-3. llm "compare {a} vs {b}" (after 1, 2)
+1. tool:curl -s https://docs.example.com/v1/auth => v1
+2. tool:curl -s https://docs.example.com/v2/auth (after 0) => v2
+3. llm "compare auth docs {v1} vs {v2}; list breaking changes" (after 1, 2)
 ```
 
-Step 2 uses `after 0` (the implied start step) to run in parallel with step 1. Step 3 waits for both to finish before running.
+Step 2 uses `after 0` (implied start) so it runs beside step 1. Step 3 waits for both.
 
 ### Loops
 
-Use `goto` with a condition to create loops:
+Use `goto` with a condition:
 
 ```
 1. llm "implement the next feature"
@@ -115,44 +115,45 @@ Use `goto` with a condition to create loops:
 3. llm "fix failing tests" (after 2, if failed, goto 2)
 ```
 
-Step 3 only runs if tests fail, fixes the code, then jumps back to step 2 to re-run tests. When tests pass, the flow continues forward.
+Step 3 runs only when tests fail, fixes the code, then returns to step 2. When tests pass, the flow continues forward.
 
 ## Repository contents
 
 |File                        |Description                                                             |
 |----------------------------|------------------------------------------------------------------------|
-|`step-flow-notation.md`     |The SFN specification — syntax, semantics, and examples                 |
-|`skills/sfn-to-dot/SKILL.md`|Converter skill for translating SFN into Attractor-compatible DOT graphs|
-|`skills/sfn-to-python/`     |Converter skill for translating SFN into runnable Python scripts that call coding-agent CLIs directly |
-|`skills/sfn-to-acp/`        |Converter skill for translating SFN into runnable Python scripts that call coding agents over ACP |
+|`step-flow-notation.md`     |SFN specification — syntax, semantics, and examples                     |
+|`skills/sfn-to-dot/SKILL.md`|Converter skill: SFN → Attractor-compatible DOT graphs                  |
+|`skills/sfn-to-python/`     |Converter skill: SFN → Python scripts that call coding-agent CLIs       |
+|`skills/sfn-to-acp/`        |Converter skill: SFN → Python scripts that call agents over ACP         |
 
 ### Using the SFN specification
 
-The spec (`step-flow-notation.md`) is a reference document. You can include it in your LLM’s context to let it understand and generate SFN flows, or use it as a guide when writing flows yourself.
+Treat `step-flow-notation.md` as a reference. Put it in an LLM's context so the model can read and write SFN, or use it yourself while authoring flows.
 
-### Using the converter skill
+### Using the converter skills
 
-The skill file (`skills/sfn-to-dot/SKILL.md`) is designed for LLM-based coding tools that support skill files — such as [OpenClaw](https://openclaw.ai/) (via ClawHub), [Kilroy](https://github.com/danshapiro/kilroy), or any tool that can load a SKILL.md into its context. Drop it into your skills directory and the LLM will know how to convert SFN flows into valid DOT pipeline graphs, handling all the plumbing: node shapes, file-based data passing, prompt contracts for extractive LLM steps, and failure routing.
+`skills/sfn-to-dot/SKILL.md` targets LLM coding tools that load skill files — [OpenClaw](https://openclaw.ai/) (via ClawHub), [Kilroy](https://github.com/danshapiro/kilroy), or any tool that can load a SKILL.md. Drop it into your skills directory and the model can turn SFN into valid DOT pipelines, including node shapes, file-based data passing, extractive prompt contracts, and failure routing.
 
-You can also paste the skill content directly into a conversation with any LLM and ask it to convert an SFN flow.
+You can also paste the skill into any LLM chat and ask it to convert a flow.
 
 The Python-oriented skills follow the same pattern:
 
-- `skills/sfn-to-python/SKILL.md` generates standalone Python scripts that invoke coding-agent CLIs directly.
-- `skills/sfn-to-acp/SKILL.md` generates standalone Python scripts that keep the same SFN interface but route `llm` steps through the Agent Client Protocol (ACP).
+- `skills/sfn-to-python/SKILL.md` emits standalone Python that invokes coding-agent CLIs.
+- `skills/sfn-to-acp/SKILL.md` emits standalone Python with the same SFN surface, routing `llm` steps through the Agent Client Protocol (ACP).
 
 ## Quick reference
 
-|Concept               |Syntax       |Example                        |
-|----------------------|-------------|-------------------------------|
-|Sequential step       |`N. type ...`|`2. llm "summarize {page}"`    |
-|Named output          |`=> name`    |`1. tool:curl url => page`     |
-|Dependency            |`after X`    |`(after 3)`                    |
-|Parallel start        |`after 0`    |`(after 0)`                    |
-|Convergence (AND-join)|`after X, Y` |`(after 1, 2)`                 |
-|Condition             |`if ...`     |`(after 2, if contains("yes"))`|
-|Loop                  |`goto N`     |`(after 3, if failed, goto 2)` |
-|Human gate            |`wait_human` |`3. wait_human => decision`    |
+|Concept               |Syntax                  |Example                        |
+|----------------------|------------------------|-------------------------------|
+|Sequential step       |`N. type ...`           |`2. llm "summarize {page}"`    |
+|LLM selector          |`llm[:agent[:model]]`   |`2. llm:codex:gpt-5.4 "..."`   |
+|Named output          |`=> name`               |`1. tool:curl url => page`     |
+|Dependency            |`after X`               |`(after 3)`                    |
+|Parallel start        |`after 0`               |`(after 0)`                    |
+|Convergence (AND-join)|`after X, Y`            |`(after 1, 2)`                 |
+|Condition             |`if ...`                |`(after 2, if contains("yes"))`|
+|Loop                  |`goto N`                |`(after 3, if failed, goto 2)` |
+|Human gate            |`wait_human`            |`3. wait_human => decision`    |
 
 ## License
 
