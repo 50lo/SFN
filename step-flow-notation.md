@@ -1,6 +1,6 @@
 # Step Flow Notation
 
-A concise format for describing multi-step workflows with branching and convergence. Designed for mobile input and LLM interpretation.
+A short format for multi-step workflows with branching and convergence. Built for mobile typing and LLM conversion.
 
 ## Step format
 
@@ -8,99 +8,99 @@ A concise format for describing multi-step workflows with branching and converge
 N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if condition][, goto N]) [=> output_name]
 ```
 
-- **N** — step number (1-based, execution order for linear flows)
+- **N** — step number (1-based; default run order for linear flows)
 - **type** — one of: `tool`, `llm`, `wait_human`
 - **:param** — for `tool`: CLI tool name (e.g. `tool:curl`, `tool:jq`). For `llm`: optional coding agent (e.g. `llm:codex`).
-- **:subparam** — for `llm`: optional model (e.g. `llm:codex:gpt-5.4`). Valid only when an agent is specified.
+- **:subparam** — for `llm`: optional model (e.g. `llm:codex:gpt-5.4`). Valid only when an agent is set.
 - **args...** — shell-style arguments: positional values, `--flag=value`, `-f value`, or boolean flags `-f` / `--flag`. Use `{name}` to interpolate a named output. See *Tool arguments*.
-- **"prompt"** — optional, for `llm` nodes. Short inline instruction in quotes.
-- **after X** — dependencies. References one or more step numbers. If omitted, step depends on N-1 (sequential).
-- **if condition** — conditional edge. Condition is evaluated against the output of the parent step that caused this step to run (see *Conditions*).
-- **goto N** — after this step completes, jump to step N. Enables loops. Can be combined with `if` for conditional looping.
-- **=> output_name** — optional output binding. Names this step's output so it can be referenced later (see *Outputs*).
+- **"prompt"** — optional, for `llm` steps. Short instruction in quotes.
+- **after X** — dependencies. One or more step numbers. If omitted, the step depends on N-1 (sequential).
+- **if condition** — conditional edge. Evaluated against the parent output that triggered this step (see *Conditions*).
+- **goto N** — after this step finishes, jump to step N. Use for loops. Combine with `if` for conditional loops.
+- **=> output_name** — optional output binding. Names this step's output for later use (see *Outputs*).
 
 ## Implied steps
 
 Every flow has two implied steps:
 
-- **Step 0 (start)** — the entry point. Step 1 implicitly depends on it. Use `after 0` to run a step in parallel from the start.
-- **Step 9999 (end)** — the terminal step. Any step with no outgoing dependents and no `goto` implicitly falls through to step 9999, ending the flow.
+- **Step 0 (start)** — entry point. Step 1 depends on it by default. Use `after 0` to start a step in parallel from the beginning.
+- **Step 9999 (end)** — terminal step. Any step with no dependents and no `goto` falls through here and ends the flow.
 
-These steps are never written explicitly; they exist to anchor the flow graph.
+Do not write these steps. They only anchor the graph.
 
 ## Tool arguments
 
-Tool args after `tool:name` follow shell conventions and are passed verbatim as a shell command:
+Arguments after `tool:name` follow shell conventions and pass through as a shell command:
 
 | Form | Meaning | Example |
 |------|---------|---------|
 | `bareword` | Positional argument | `tool:curl https://example.com` |
-| `{var}` | Interpolated named output (positional or as value) | `tool:curl {page_url}` |
+| `{var}` | Interpolated named output (positional or as a value) | `tool:curl {page_url}` |
 | `-f` | Boolean flag (no value) | `tool:curl -s` |
 | `-f value` | Flag with a value | `tool:jq -r '.name'` |
-| `--flag=value` | Flag with a value, long form | `tool:curl --output=file.html` |
+| `--flag=value` | Long flag with a value | `tool:curl --output=file.html` |
 
-Multiple args are space-separated as in a shell. Quote values that contain spaces: `tool:echo "hello world"`.
+Separate multiple args with spaces, as in a shell. Quote values that contain spaces: `tool:echo "hello world"`.
 
 ## LLM selectors
 
-`llm` steps may optionally pin a coding agent and model:
+`llm` steps may pin a coding agent and model:
 
 ```text
 llm[:agent[:model]] "prompt"
 ```
 
-- `llm "..."` — use the executor's default agent and model
-- `llm:codex "..."` — use `codex` and that agent's default model
-- `llm:codex:gpt-5.4 "..."` — use `codex` with an explicit model
+- `llm "..."` — executor default agent and model
+- `llm:codex "..."` — `codex` with that agent's default model
+- `llm:codex:gpt-5.4 "..."` — `codex` with an explicit model
 - `llm::gpt-5.4 "..."` — invalid; a model requires an agent
 
-Agent/model selectors are step-local overrides. They do not change the defaults used by other `llm` steps.
+Selectors apply only to that step. They do not change defaults for other `llm` steps.
 
 ## Defaults and shortcuts
 
-- Steps without `after` are sequential: step N implicitly depends on step N-1.
-- Step 1 is always the first runnable step (it implicitly depends on step 0).
-- Steps with no outgoing dependents and no `goto` implicitly fall through to step 9999 (end).
-- `wait_human` pauses execution until the user responds. The response becomes the step's output.
+- Steps without `after` run in sequence: step N depends on step N-1.
+- Step 1 is the first runnable step (it depends on step 0).
+- Steps with no dependents and no `goto` fall through to step 9999 (end).
+- `wait_human` pauses until the user replies. That reply is the step's output.
 
 ## Outputs
 
-A step may name its output using `=> name`. Later steps may reference named outputs inside prompts and tool arguments using `{name}` interpolation.
+Name a step's output with `=> name`. Later steps can use that name in prompts and tool arguments via `{name}`.
 
 Example:
 
 ```text
-1. tool:curl -s https://example.com => page
-2. llm "summarize {page}" => summary
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/releases/latest => release
+2. llm "summarize {release} for a short changelog" => summary
 3. tool:save_note --text={summary}
 ```
 
 Notes:
 
-- If multiple parents exist, prefer naming the specific parent output you want to reference.
-- If a step has no `=> name`, its output is still available to the executor/LLM, but it cannot be referenced by name.
+- With multiple parents, name the specific parent output you need.
+- Without `=> name`, the executor or LLM may still see the output, but later steps cannot reference it by name.
 
 ## Conditions
 
-Conditions gate whether a step runs when its dependency completes.
+Conditions decide whether a step runs when a dependency finishes.
 
 ### Condition subject
 
-A condition is evaluated against the output of the dependency that triggered the step.
+Evaluate a condition against the output of the dependency that triggered the step.
 
-- If the step has a single dependency, the condition is evaluated against that dependency's output.
-- If the step has multiple dependencies, the condition is evaluated against the dependency whose completion makes the step eligible to run (i.e., "the triggering parent"). If you need unambiguous gating, use `=>` to name outputs and refer to them explicitly in the condition via `has(...)`, `eq(...)`, etc.
-- To test a specific named output rather than the triggering parent, prefix the predicate with the output name: `output_name contains("text")`, `output_name has(key)`, etc.
+- One dependency: use that dependency's output.
+- Multiple dependencies: use the dependency whose completion made the step eligible (the triggering parent). For clearer gating, name outputs with `=>` and refer to them in the condition with `has(...)`, `eq(...)`, and similar forms.
+- To test a specific named output instead of the triggering parent, qualify the predicate: `output_name contains("text")`, `output_name has(key)`, and so on.
 
 ### Condition language
 
-To keep conditions short and phone-friendly, use a small set of functions and operators. The LLM may still interpret the semantics, but these forms are preferred:
+Keep conditions short and phone-friendly. Prefer this small set of forms (an LLM may still interpret meaning):
 
 - **status tokens**: `succeeded`, `failed`
 - **text predicates**: `contains("text")`, `match(/regex/)`
-- **qualified text predicates**: `output_name contains("text")`, `output_name match(/regex/)` — test a specific named output
-- **field predicates** (for structured outputs): `has(key)`, `eq(key,"value")`
+- **qualified text predicates**: `output_name contains("text")`, `output_name match(/regex/)` — test a named output
+- **field predicates** (structured outputs): `has(key)`, `eq(key,"value")`
 - **boolean ops**: `and`, `or`, `not` (parentheses optional)
 
 Examples:
@@ -114,13 +114,13 @@ Examples:
 
 ### Failure detection
 
-`failed` and `succeeded` work uniformly across all step types. `failed` means the step did not accomplish its goal; `succeeded` means it did. The executor handles detecting and routing failures appropriately for each step type.
+`failed` and `succeeded` work the same across step types. `failed` means the step did not meet its goal; `succeeded` means it did. The executor detects and routes failures for each type.
 
-**Failure routing pattern:** when a step produces a named output consumed by downstream steps, add an `if failed` sibling branch to route to an alternative action (retry, fallback source, error report) when the step cannot produce the expected result. See *Extractive LLM with failure handling* in Examples.
+**Failure routing:** when a named output feeds later steps, add an `if failed` sibling branch for retry, fallback, or an error report. See *Extractive LLM with failure handling* in Examples.
 
 ## Branching
 
-Multiple steps can reference the same parent with different conditions:
+Several steps can share one parent and use different conditions:
 
 ```text
 3. tool:save_db (after 2, if contains("approved"))
@@ -129,39 +129,39 @@ Multiple steps can reference the same parent with different conditions:
 
 ## Convergence
 
-A step that depends on multiple parents waits for **all** of them to complete before running (AND-join):
+A step with multiple parents waits for **all** of them (AND-join):
 
 ```text
 5. llm "summarize both results" (after 3, 4)
 ```
 
-Step 5 runs only after both step 3 and step 4 have completed.
+Step 5 runs only after steps 3 and 4 both finish.
 
 ## Loops
 
-Use `goto N` to create cycles. Combine with `if` for conditional looping:
+Use `goto N` for cycles. Add `if` for conditional loops:
 
 ```text
 3. tool:run_tests => tests
 4. llm:codex "fix failing tests" (after 3, if failed, goto 3)
 ```
 
-Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step 3 falls through to the next step instead.
+Step 4 runs only when tests fail, then returns to step 3. When tests pass, step 3 continues forward instead.
 
 ## Edge cases
 
 - **Parallel execution**: two steps with the same `after` and no `if` run in parallel.
-- **Condition matching**: conditions are interpreted against the triggering parent's output; prefer the *Condition language* forms for consistency.
-- **Missing conditions**: if a step has conditional siblings but no condition itself, it acts as the default/else branch.
-- **Loop exit**: a `goto` with an `if` condition only loops when the condition is met. Otherwise, execution continues forward normally.
+- **Condition matching**: conditions apply to the triggering parent's output; prefer the *Condition language* forms.
+- **Missing conditions**: if siblings have conditions and one step has none, that step is the default/else branch.
+- **Loop exit**: a `goto` with `if` loops only when the condition holds. Otherwise execution continues forward.
 
 ## Examples
 
-### Linear: fetch and summarize
+### Linear: fetch release notes and summarize
 
 ```text
-1. tool:curl -s https://example.com => page
-2. llm:codex:gpt-5.4 "summarize {page}" => summary
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/releases/latest => release
+2. llm:codex:gpt-5.4 "summarize {release} for a short changelog email" => summary
 3. wait_human
 4. tool:save_note --text={summary}
 ```
@@ -169,44 +169,44 @@ Step 4 runs only if tests fail, then jumps back to step 3. When tests pass, step
 ### Branching: review gate
 
 ```text
-1. tool:curl -s https://example.com => page
-2. llm "analyze {page}, is it relevant?" => review
+1. tool:curl -s https://api.github.com/repos/50lo/SFN/pulls/1 => pr
+2. llm "review {pr}: is this ready to merge?" => review
 3. wait_human => decision
 4. tool:save_db --payload={review} (after 3, if contains("approved"))
-5. llm:codex "draft rejection reason" (after 3, if contains("rejected"))
+5. llm:codex "draft a clear rejection note for the author" (after 3, if contains("rejected"))
 ```
 
 ### Parallel with convergence
 
 ```text
-1. tool:curl -s https://site-a.com => a
-2. tool:curl -s https://site-b.com (after 0) => b
-3. llm:codex "compare both results: {a} vs {b}" (after 1, 2) => diff
+1. tool:curl -s https://docs.example.com/v1/auth => v1
+2. tool:curl -s https://docs.example.com/v2/auth (after 0) => v2
+3. llm:codex "compare auth docs {v1} vs {v2}; list breaking changes" (after 1, 2) => diff
 4. wait_human
 5. tool:send_report --text={diff}
 ```
 
-Note: step 2 uses `after 0` to indicate no dependency on step 1 (both run in parallel from the start). Step 3 waits for both to complete (AND-join).
+Note: step 2 uses `after 0` so it does not wait on step 1; both start together. Step 3 waits for both (AND-join).
 
 ### Extractive LLM with failure handling
 
 ```text
-1. tool:curl -s https://example.com => page
+1. tool:curl -s https://docs.example.com/pricing => page
 2. llm:codex:gpt-5.4 "extract the pricing table from {page}" => pricing
 3. tool:save_note --text={pricing}
-4. llm "pricing not found, describe what the page contains instead" (after 2, if failed)
+4. llm "pricing not found; describe what the page contains instead" (after 2, if failed)
 ```
 
-Step 3 (default branch) saves the extracted pricing on success. Step 4 runs if step 2 failed — whether due to an API error or because the content wasn't found — and produces a useful fallback description.
+Step 3 is the default success path and saves the table. Step 4 runs if step 2 failed — API error or missing content — and returns a useful fallback.
 
-### Loop: iterative dev cycle
+### Loop: iterative build cycle
 
 ```text
-1. llm "Read PRD.md, split to tasks, save to TASKS.md" => tasks
-2. llm:codex:gpt-5.4 "Implement next task from TASKS.md, mark done" => impl
+1. llm "Read PRD.md, split into tasks, save to TASKS.md" => tasks
+2. llm:codex:gpt-5.4 "Implement the next open task from TASKS.md, then mark it done" => impl
 3. tool:run_tests => tests
 4. llm:codex "Fix failing tests" (after 3, if failed, goto 3)
-5. llm "Prepare implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
+5. llm "Write a short implementation summary" (after 3, if succeeded and contains("tasks remain"), goto 2)
 ```
 
-Inner loop: steps 3-4 repeat until tests pass. Outer loop: steps 2-5 repeat until all tasks are done. When no tasks remain, step 5 falls through to step 9999 (end).
+Inner loop: steps 3–4 repeat until tests pass. Outer loop: steps 2–5 repeat while tasks remain. When none remain, step 5 falls through to step 9999 (end).
