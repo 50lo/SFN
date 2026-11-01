@@ -28,7 +28,7 @@ SFN is a concise text format for multi-step workflows.
 ### Step syntax
 
 ```text
-N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if cond][, goto N][, => name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if cond][, goto N]) [=> name]
 ```
 
 | Part | Meaning |

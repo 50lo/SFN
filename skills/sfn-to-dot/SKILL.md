@@ -19,20 +19,36 @@ SFN is a concise text format for multi-step workflows.
 ### Step syntax
 
 ```
-N. type[:param] [args...] ["prompt"] ([after X[,Y...]][, if cond][, goto N][, => name])
+N. type[:param[:subparam]] [args...] ["prompt"] ([after X[,Y...]][, if cond][, goto N]) [=> name]
 ```
 
 | Part | Meaning |
 |------|---------|
 | `N` | Step number (1-based) |
 | `type` | `tool`, `llm`, or `wait_human` |
-| `:param` | Tool name for `tool` type (e.g. `tool:fetch_url`) |
+| `:param` | Tool name for `tool`, or coding agent for `llm` |
+| `:subparam` | Model for `llm`; requires `:param` |
 | `args` | Shell-style arguments (see below) |
 | `"prompt"` | Inline instruction for `llm` steps |
 | `after X,Y` | Dependencies. Omitted = depends on N-1. `after 0` = depends on flow start |
 | `if cond` | Conditional gate on parent output |
 | `goto N` | Loop back to step N after completion |
-| `=> name` | Name this step's output for `{name}` interpolation in later steps |
+| `=> name` | Name this step's output for `{name}` interpolation in later steps (outside parentheses) |
+
+### LLM selectors
+
+`llm` steps may pin a coding agent and model:
+
+```
+llm[:agent[:model]] "prompt"
+```
+
+- `llm "..."` → runtime/engine default
+- `llm:codex "..."` → pin agent
+- `llm:codex:gpt-5.4 "..."` → pin agent and model
+- `llm::gpt-5.4 "..."` → invalid
+
+When converting to Attractor DOT, preserve prompt/structure; if the engine has no agent/model attributes, record the selector in a node comment or label — do not invent unsupported DOT attributes.
 
 ### Tool argument syntax
 
